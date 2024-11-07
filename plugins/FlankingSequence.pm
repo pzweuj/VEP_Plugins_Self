@@ -61,7 +61,7 @@ sub new {
     
     # 读取参数
     my $params = $self->params;
-    $self->{flank_length} = $params->[0] || 10;  # 上下游长度，默认为10
+    $self->{flank_length} = $params->[0] || 10;  # 默认提取10个碱基作为上下游序列
     
     return $self;
 }
@@ -92,19 +92,28 @@ sub run {
         return {};
     }
     
-    # 获取上下游序列
+    # 获取参考序列的长度
+    my $ref_length = length($ref);
+    
+    # 获取上下游序列的长度
     my $flank_length = $self->{flank_length};
-    my $slice = $vf->slice->sub_Slice($pos - $flank_length, $pos + $flank_length);
-    my $flanking_seq = $slice ? $slice->seq : '';
     
-    # 确认获取到的序列长度是否符合预期
-    if (length($flanking_seq) < (2 * $flank_length + length($ref))) {
-        warn "Sequence length insufficient for variant at $chrom:$pos\n";
-        return {};
-    }
+    # 计算左侧序列的起始位置，确保从ref的前一位开始
+    my $left_start_pos = $pos - $flank_length;
+    $left_start_pos = 1 if $left_start_pos < 1;  # 防止左侧起始位置小于1
     
-    # 插入变异信息
-    my $mutated_seq = substr($flanking_seq, 0, $flank_length) . "[$ref/$alt]" . substr($flanking_seq, $flank_length + length($ref));
+    # 计算右侧序列的结束位置，确保从ref的最后一位之后的下一位开始
+    my $right_end_pos = $pos + $ref_length + $flank_length - 1;
+    
+    # 获取左侧和右侧序列
+    my $slice_left = $vf->slice->sub_Slice($left_start_pos, $pos - 1); # 上游为pos-1
+    my $slice_right = $vf->slice->sub_Slice($pos + $ref_length, $right_end_pos); # 下游为pos+ref_length
+    
+    my $flanking_seq_left = $slice_left ? $slice_left->seq : '';
+    my $flanking_seq_right = $slice_right ? $slice_right->seq : '';
+    
+    # 拼接左侧、变异部分和右侧序列
+    my $mutated_seq = $flanking_seq_left . "[$ref/$alt]" . $flanking_seq_right;
     
     return {
         FlankingSequence => $mutated_seq,
